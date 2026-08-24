@@ -1,0 +1,97 @@
+name: Sync Upstream Release
+
+on:
+  schedule:
+    # GitHub cron uses UTC. 16:17 UTC = 00:17 Asia/Singapore.
+    - cron: '17 16 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-upstream-release
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: iOfficeAI/AionUi
+  BUILD_WORKFLOW: build-release-win.yml
+
+jobs:
+  sync:
+    name: Sync latest stable release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get latest upstream stable release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          TAG=$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest" --jq '.tag_name')
+
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "::error::Cannot obtain the latest upstream stable release tag"
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream stable release: $TAG"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Fork release $TAG already exists; nothing to do"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Fork release $TAG does not exist"
+          fi
+
+      - name: Sync upstream release code
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream main --tags --force
+
+          if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Upstream tag $TAG was not fetched"
+            exit 1
+          fi
+
+          # Merge instead of force-reset so fork-specific workflows and changes survive.
+          # A real source conflict stops the workflow for manual resolution.
+          git merge --no-edit "$TAG"
+
+          git push origin main
+          git push origin "refs/tags/$TAG"
+
+      - name: Trigger Windows x64 build and release
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          gh workflow run "$BUILD_WORKFLOW"             --repo "$GITHUB_REPOSITORY"             --ref main             -f tag="$TAG"
+
+          echo "Triggered Windows x64 build for $TAG"

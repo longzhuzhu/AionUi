@@ -1,0 +1,128 @@
+name: Build and Release Windows x64
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Upstream stable release tag, for example v2.1.60
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: build-release-win-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: iOfficeAI/AionUi
+
+jobs:
+  precheck:
+    name: Check existing release
+    runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+
+    steps:
+      - name: Check fork release
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists; build will be skipped"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-windows:
+    name: Build Windows x64
+    needs: precheck
+    if: needs.precheck.outputs.exists != 'true'
+    uses: ./.github/workflows/_build-reusable.yml
+    with:
+      matrix: >-
+        {"include":[{"platform":"windows-x64","os":"windows-2022","command":"node scripts/build-with-builder.js x64 --win --x64","artifact-name":"windows-build-x64","arch":"x64"}]}
+      ref: ${{ inputs.tag }}
+      skip_code_quality: true
+      append_commit_hash: false
+      upload_installers_only: true
+      aioncore_run_id: ''
+    secrets: inherit
+
+  release:
+    name: Create fork release
+    runs-on: ubuntu-latest
+    needs:
+      - precheck
+      - build-windows
+    if: >-
+      needs.precheck.outputs.exists != 'true' &&
+      needs.build-windows.result == 'success'
+
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build-x64
+          path: release-assets
+
+      - name: Verify installers
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Downloaded files:"
+          find release-assets -maxdepth 2 -type f -print
+
+          INSTALLER_COUNT=$(find release-assets -type f \
+            \( -iname '*.exe' -o -iname '*.msi' \) | wc -l)
+
+          if [ "$INSTALLER_COUNT" -eq 0 ]; then
+            echo "::error::No EXE or MSI installer was generated"
+            exit 1
+          fi
+
+      - name: Prepare release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "Windows x64 build generated automatically from:"
+            echo
+            echo "https://github.com/${UPSTREAM_REPOSITORY}/releases/tag/${TAG}"
+            echo
+            echo "---"
+            echo
+            gh api "repos/${UPSTREAM_REPOSITORY}/releases/tags/${TAG}" --jq '.body // ""'
+          } > release-notes.md
+
+      - name: Create release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          PRERELEASE=$(gh api             "repos/${UPSTREAM_REPOSITORY}/releases/tags/${TAG}"             --jq '.prerelease')
+
+          RELEASE_ARGS=()
+          if [ "$PRERELEASE" = "true" ]; then
+            RELEASE_ARGS+=(--prerelease)
+          fi
+
+          gh release create "$TAG"             release-assets/*             --repo "$GITHUB_REPOSITORY"             --title "$TAG Windows x64"             --notes-file release-notes.md             --verify-tag             "${RELEASE_ARGS[@]}"
+
+          echo "Release created:"
+          echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"

@@ -1,4 +1,4 @@
-name: Build and Release Windows x64
+name: Build and Release All Desktop Platforms
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: build-release-win-${{ inputs.tag }}
+  group: build-release-all-${{ inputs.tag }}
   cancel-in-progress: false
 
 env:
@@ -41,14 +41,21 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-  build-windows:
-    name: Build Windows x64
+  build-all:
+    name: Build all desktop platforms
     needs: precheck
     if: needs.precheck.outputs.exists != 'true'
     uses: ./.github/workflows/_build-reusable.yml
     with:
       matrix: >-
-        {"include":[{"platform":"windows-x64","os":"windows-2022","command":"node scripts/build-with-builder.js x64 --win --x64","artifact-name":"windows-build-x64","arch":"x64"}]}
+        {"include":[
+          {"platform":"macos-arm64","os":"macos-14","command":"node scripts/build-with-builder.js arm64 --mac --arm64","artifact-name":"macos-build-arm64","arch":"arm64"},
+          {"platform":"macos-x64","os":"macos-14","command":"node scripts/build-with-builder.js x64 --mac --x64","artifact-name":"macos-build-x64","arch":"x64"},
+          {"platform":"windows-x64","os":"windows-2022","command":"node scripts/build-with-builder.js x64 --win --x64","artifact-name":"windows-build-x64","arch":"x64"},
+          {"platform":"windows-arm64","os":"windows-11-arm","command":"node scripts/build-with-builder.js arm64 --win --arm64","artifact-name":"windows-build-arm64","arch":"arm64"},
+          {"platform":"linux-x64","os":"ubuntu-latest","command":"node scripts/build-with-builder.js x64 --linux --x64","artifact-name":"linux-build-x64","arch":"x64"},
+          {"platform":"linux-arm64","os":"ubuntu-24.04-arm","command":"node scripts/build-with-builder.js arm64 --linux --arm64","artifact-name":"linux-build-arm64","arch":"arm64"}
+        ]}
       ref: ${{ inputs.tag }}
       skip_code_quality: true
       append_commit_hash: false
@@ -57,37 +64,53 @@ jobs:
     secrets: inherit
 
   release:
-    name: Create fork release
+    name: Create multi-platform release
     runs-on: ubuntu-latest
     needs:
       - precheck
-      - build-windows
+      - build-all
     if: >-
       needs.precheck.outputs.exists != 'true' &&
-      needs.build-windows.result == 'success'
+      needs.build-all.result == 'success'
 
     steps:
-      - name: Download Windows artifacts
+      - name: Download all platform artifacts
         uses: actions/download-artifact@v4
         with:
-          name: windows-build-x64
+          pattern: '*-build-*'
           path: release-assets
+          merge-multiple: false
 
-      - name: Verify installers
+      - name: Verify every platform installer
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Downloaded files:"
-          find release-assets -maxdepth 2 -type f -print
+          check_artifact() {
+            local artifact="$1"
+            local extension="$2"
+            local directory="release-assets/$artifact"
 
-          INSTALLER_COUNT=$(find release-assets -type f \
-            \( -iname '*.exe' -o -iname '*.msi' \) | wc -l)
+            if [ ! -d "$directory" ]; then
+              echo "::error::Missing artifact: $artifact"
+              exit 1
+            fi
 
-          if [ "$INSTALLER_COUNT" -eq 0 ]; then
-            echo "::error::No EXE or MSI installer was generated"
-            exit 1
-          fi
+            if ! find "$directory" -maxdepth 1 -type f -iname "*.$extension" -print -quit | grep -q .; then
+              echo "::error::Artifact $artifact does not contain a .$extension installer"
+              exit 1
+            fi
+          }
+
+          check_artifact "macos-build-arm64" "dmg"
+          check_artifact "macos-build-x64" "dmg"
+          check_artifact "windows-build-x64" "exe"
+          check_artifact "windows-build-arm64" "exe"
+          check_artifact "linux-build-x64" "deb"
+          check_artifact "linux-build-arm64" "deb"
+
+          echo "Verified release files:"
+          find release-assets -type f -print
 
       - name: Prepare release notes
         shell: bash
@@ -98,8 +121,13 @@ jobs:
           set -euo pipefail
 
           {
-            echo "Windows x64 build generated automatically from:"
+            echo "Automatically built desktop installers for:"
             echo
+            echo "- Windows x64 and ARM64"
+            echo "- macOS x64 and ARM64"
+            echo "- Linux x64 and ARM64"
+            echo
+            echo "Upstream release:"
             echo "https://github.com/${UPSTREAM_REPOSITORY}/releases/tag/${TAG}"
             echo
             echo "---"
@@ -115,14 +143,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          PRERELEASE=$(gh api             "repos/${UPSTREAM_REPOSITORY}/releases/tags/${TAG}"             --jq '.prerelease')
+          PRERELEASE=$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/tags/${TAG}" --jq '.prerelease')
 
           RELEASE_ARGS=()
           if [ "$PRERELEASE" = "true" ]; then
             RELEASE_ARGS+=(--prerelease)
           fi
 
-          gh release create "$TAG"             release-assets/*             --repo "$GITHUB_REPOSITORY"             --title "$TAG Windows x64"             --notes-file release-notes.md             --verify-tag             "${RELEASE_ARGS[@]}"
+          mapfile -d '' RELEASE_FILES < <(find release-assets -type f -print0)
+
+          if [ "${#RELEASE_FILES[@]}" -eq 0 ]; then
+            echo "::error::No release files found"
+            exit 1
+          fi
+
+          gh release create "$TAG" "${RELEASE_FILES[@]}"             --repo "$GITHUB_REPOSITORY"             --title "$TAG Multi-platform"             --notes-file release-notes.md             --verify-tag             "${RELEASE_ARGS[@]}"
 
           echo "Release created:"
           echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"

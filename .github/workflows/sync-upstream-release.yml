@@ -51,9 +51,269 @@ jobs:
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Fork release $TAG already exists; nothing to do"
+            echo "Fork release $TAG already exists"
+
+            ASSETS=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.assets[].name')
+            MISSING=0
+
+            for PATTERN in               '-mac-arm64\\.dmg
+
+      - name: Sync upstream release code
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream main --tags --force
+
+          if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Upstream tag $TAG was not fetched"
+            exit 1
+          fi
+
+          # Merge instead of force-reset so fork-specific workflows and changes survive.
+          # A real source conflict stops the workflow for manual resolution.
+          git merge --no-edit "$TAG"
+
+          git push origin main
+          git push origin "refs/tags/$TAG"
+
+      - name: Trigger multi-platform build and release
+        if: steps.release.outputs.complete != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_EXISTS: ${{ steps.release.outputs.exists }}
+        run: |
+          set -euo pipefail
+
+          gh workflow run "$BUILD_WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref main -f tag="$TAG" -f replace_existing="$RELEASE_EXISTS"
+
+          echo "Triggered multi-platform build for $TAG"
+               '-mac-x64\\.dmg
+
+      - name: Sync upstream release code
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream main --tags --force
+
+          if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Upstream tag $TAG was not fetched"
+            exit 1
+          fi
+
+          # Merge instead of force-reset so fork-specific workflows and changes survive.
+          # A real source conflict stops the workflow for manual resolution.
+          git merge --no-edit "$TAG"
+
+          git push origin main
+          git push origin "refs/tags/$TAG"
+
+      - name: Trigger multi-platform build and release
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          gh workflow run "$BUILD_WORKFLOW"             --repo "$GITHUB_REPOSITORY"             --ref main             -f tag="$TAG"
+
+          echo "Triggered multi-platform build for $TAG"
+               '-win-arm64\\.exe
+
+      - name: Sync upstream release code
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream main --tags --force
+
+          if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Upstream tag $TAG was not fetched"
+            exit 1
+          fi
+
+          # Merge instead of force-reset so fork-specific workflows and changes survive.
+          # A real source conflict stops the workflow for manual resolution.
+          git merge --no-edit "$TAG"
+
+          git push origin main
+          git push origin "refs/tags/$TAG"
+
+      - name: Trigger multi-platform build and release
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          gh workflow run "$BUILD_WORKFLOW"             --repo "$GITHUB_REPOSITORY"             --ref main             -f tag="$TAG"
+
+          echo "Triggered multi-platform build for $TAG"
+               '-win-x64\\.exe
+
+      - name: Sync upstream release code
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream main --tags --force
+
+          if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Upstream tag $TAG was not fetched"
+            exit 1
+          fi
+
+          # Merge instead of force-reset so fork-specific workflows and changes survive.
+          # A real source conflict stops the workflow for manual resolution.
+          git merge --no-edit "$TAG"
+
+          git push origin main
+          git push origin "refs/tags/$TAG"
+
+      - name: Trigger multi-platform build and release
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          gh workflow run "$BUILD_WORKFLOW"             --repo "$GITHUB_REPOSITORY"             --ref main             -f tag="$TAG"
+
+          echo "Triggered multi-platform build for $TAG"
+               '-linux-arm64\\.deb
+
+      - name: Sync upstream release code
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream main --tags --force
+
+          if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Upstream tag $TAG was not fetched"
+            exit 1
+          fi
+
+          # Merge instead of force-reset so fork-specific workflows and changes survive.
+          # A real source conflict stops the workflow for manual resolution.
+          git merge --no-edit "$TAG"
+
+          git push origin main
+          git push origin "refs/tags/$TAG"
+
+      - name: Trigger multi-platform build and release
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          gh workflow run "$BUILD_WORKFLOW"             --repo "$GITHUB_REPOSITORY"             --ref main             -f tag="$TAG"
+
+          echo "Triggered multi-platform build for $TAG"
+               '-linux-x64\\.deb
+
+      - name: Sync upstream release code
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream main --tags --force
+
+          if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Upstream tag $TAG was not fetched"
+            exit 1
+          fi
+
+          # Merge instead of force-reset so fork-specific workflows and changes survive.
+          # A real source conflict stops the workflow for manual resolution.
+          git merge --no-edit "$TAG"
+
+          git push origin main
+          git push origin "refs/tags/$TAG"
+
+      - name: Trigger multi-platform build and release
+        if: steps.release.outputs.exists != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          gh workflow run "$BUILD_WORKFLOW"             --repo "$GITHUB_REPOSITORY"             --ref main             -f tag="$TAG"
+
+          echo "Triggered multi-platform build for $TAG"
+; do
+              if ! grep -Eq -- "$PATTERN" <<< "$ASSETS"; then
+                echo "Missing release asset matching: $PATTERN"
+                MISSING=1
+              fi
+            done
+
+            if [ "$MISSING" -eq 0 ]; then
+              echo "complete=true" >> "$GITHUB_OUTPUT"
+              echo "All six platform installers are already present"
+            else
+              echo "complete=false" >> "$GITHUB_OUTPUT"
+              echo "Release is incomplete and will be rebuilt"
+            fi
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "complete=false" >> "$GITHUB_OUTPUT"
             echo "Fork release $TAG does not exist"
           fi
 

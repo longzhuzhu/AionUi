@@ -7,6 +7,11 @@ on:
         description: Upstream stable release tag, for example v2.1.60
         required: true
         type: string
+      replace_existing:
+        description: Rebuild and replace assets when the fork release already exists
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -36,7 +41,7 @@ jobs:
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Release $TAG already exists; build will be skipped"
+            echo "Release $TAG already exists"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
@@ -44,7 +49,7 @@ jobs:
   build-all:
     name: Build all desktop platforms
     needs: precheck
-    if: needs.precheck.outputs.exists != 'true'
+    if: needs.precheck.outputs.exists != 'true' || inputs.replace_existing
     uses: ./.github/workflows/_build-reusable.yml
     with:
       matrix: >-
@@ -70,7 +75,7 @@ jobs:
       - precheck
       - build-all
     if: >-
-      needs.precheck.outputs.exists != 'true' &&
+      (needs.precheck.outputs.exists != 'true' || inputs.replace_existing) &&
       needs.build-all.result == 'success'
 
     steps:
@@ -135,7 +140,7 @@ jobs:
             gh api "repos/${UPSTREAM_REPOSITORY}/releases/tags/${TAG}" --jq '.body // ""'
           } > release-notes.md
 
-      - name: Create release
+      - name: Create or update release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -157,7 +162,18 @@ jobs:
             exit 1
           fi
 
-          gh release create "$TAG" "${RELEASE_FILES[@]}"             --repo "$GITHUB_REPOSITORY"             --title "$TAG Multi-platform"             --notes-file release-notes.md             --verify-tag             "${RELEASE_ARGS[@]}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [ "${{ inputs.replace_existing }}" != "true" ]; then
+              echo "::error::Release $TAG already exists and replace_existing is false"
+              exit 1
+            fi
 
-          echo "Release created:"
+            gh release upload "$TAG" "${RELEASE_FILES[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG Multi-platform" --notes-file release-notes.md
+            echo "Release assets updated:"
+          else
+            gh release create "$TAG" "${RELEASE_FILES[@]}" --repo "$GITHUB_REPOSITORY" --title "$TAG Multi-platform" --notes-file release-notes.md --verify-tag "${RELEASE_ARGS[@]}"
+            echo "Release created:"
+          fi
+
           echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"

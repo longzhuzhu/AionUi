@@ -114,8 +114,15 @@ jobs:
           # .github/workflows/ differs from the default branch is rejected, and upstream tags
           # carry upstream's copy of the workflow files this fork patches. Pushing main above
           # already published the tagged commit, so create the ref over the API instead.
+          # Resolve the existing fork tag with git rather than `gh api`, which prints the
+          # error body to stdout on a miss and so cannot be distinguished from a real answer.
+          # ls-remote peels annotated tags via ^{} and returns nothing for lightweight ones.
           TAG_SHA=$(git rev-parse "refs/tags/${TAG}^{commit}")
-          FORK_TAG_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG}" --jq '.sha' 2>/dev/null || true)
+          FORK_TAG_SHA=$(git ls-remote origin "refs/tags/${TAG}^{}" | cut -f1)
+
+          if [ -z "$FORK_TAG_SHA" ]; then
+            FORK_TAG_SHA=$(git ls-remote origin "refs/tags/${TAG}" | cut -f1)
+          fi
 
           if [ -z "$FORK_TAG_SHA" ]; then
             gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" -f "ref=refs/tags/${TAG}" -f "sha=${TAG_SHA}" --silent

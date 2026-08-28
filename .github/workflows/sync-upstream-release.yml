@@ -88,6 +88,7 @@ jobs:
         if: steps.release.outputs.exists != 'true'
         shell: bash
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
@@ -108,7 +109,23 @@ jobs:
           git merge --no-edit "$TAG"
 
           git push origin main
-          git push origin "refs/tags/$TAG"
+
+          # GITHUB_TOKEN can never hold the `workflows` permission, so pushing a tag whose
+          # .github/workflows/ differs from the default branch is rejected, and upstream tags
+          # carry upstream's copy of the workflow files this fork patches. Pushing main above
+          # already published the tagged commit, so create the ref over the API instead.
+          TAG_SHA=$(git rev-parse "refs/tags/${TAG}^{commit}")
+          FORK_TAG_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG}" --jq '.sha' 2>/dev/null || true)
+
+          if [ -z "$FORK_TAG_SHA" ]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" -f "ref=refs/tags/${TAG}" -f "sha=${TAG_SHA}" --silent
+            echo "Created fork tag $TAG at $TAG_SHA"
+          elif [ "$FORK_TAG_SHA" = "$TAG_SHA" ]; then
+            echo "Fork tag $TAG already points at $TAG_SHA"
+          else
+            echo "::error::Fork tag $TAG points at $FORK_TAG_SHA but upstream tag is $TAG_SHA"
+            exit 1
+          fi
 
       - name: Trigger multi-platform build and release
         if: steps.release.outputs.complete != 'true'
